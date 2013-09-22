@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<!--
+inspiration: 
+http://bost.ocks.org/mike/map/index.html
+http://bl.ocks.org/mbostock/4060606 
+-->
+
+<style>
+
+.graticule {
+  fill: none;
+  stroke: #777;
+  stroke-opacity: .5;
+  stroke-width: .5px;
+}
+
+.land {
+  fill: #222;
+}
+
+.boundary {
+  fill: none;
+  stroke: #fff;
+  stroke-width: .5px;
+}
+
+.subunit.SCT { fill: #ddc; }
+.subunit.WLS { fill: #cdd; }
+.subunit.NIR { fill: #cdc; }
+.subunit.ENG { fill: #dcd; }
+
+.subunit.IRL,
+.subunit-label.IRL {
+  display: none;
+}
+
+.subunit-boundary {
+  fill: none;
+  stroke: #777;
+  stroke-dasharray: 2,2;
+  stroke-linejoin: round;
+}
+
+.subunit-boundary.IRL {
+  stroke: #aaa;
+}
+
+.subunit-label {
+  fill: #777;
+  fill-opacity: .5;
+  font-size: 20px;
+  font-weight: 300;
+  text-anchor: middle;
+}
+
+.place,
+.place-label {
+  fill: #444;
+}
+
+text {
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 10px;
+  pointer-events: none;
+}
+
+</style>
+<body>
+<script src="http://d3js.org/d3.v3.min.js"></script>
+<script src="http://d3js.org/d3.geo.projection.v0.min.js"></script>
+<script src="http://d3js.org/topojson.v1.min.js"></script>
+<script src="http://d3js.org/queue.v1.min.js"></script>
+<script>
+
+var country_fills = { "ENG" : "#0d0", "SCT" : "#ddc", "NIR" : "#cdc", "WLS": "#cdd" }
+
+function get_country(country) {
+  var fill = country_fills[country];
+  if (fill == undefined)
+    fill = "#fff";
+  return fill;
+}
+
+// var color_scale = d3.scale.linear().domain([0,100]).range(["#1000ff", "#ff0010"]).interpolate(d3.interpolateRgb);
+// var country_percentage = { "ENG" : 100, "SCT" : 20, "NIR" : 30, "WLS": 80 }
+// function get_percentage_country(country) {
+//   return country_percentage[country];
+// }
+// function get_color_country(country) {
+//   var percentage = get_percentage_country(country);
+//   if (percentage == undefined) {
+//     percentage = 0.0;
+//     return "#ffffff"
+//   }
+//   else {
+//     return color_scale(percentage);
+//   };
+// }
+
+// rgb(247,251,255) --> #F7FBFF
+// rgb(8,48,107) --> #08306B
+
+var color_scale = d3.scale.linear().domain([0,100]).range(["#fffbf7", "#6b3008"]).interpolate(d3.interpolateRgb);
+
+var country_pax_percentage = d3.map();
+
+function get_color_country(country) {
+  var percentage = country_pax_percentage.get(country);
+  if (percentage == undefined) {
+    percentage = 0.0;
+    return "#ffffff"
+  }
+  else {
+    return color_scale(percentage);
+  }
+};
+
+
+
+var width = 960,
+     height = 1160;
+
+// var projection = d3.geo.albers()
+//     .center([0, 55.4])
+//     .rotate([4.4, 0])
+//     .parallels([50, 60])
+//     .scale(1200 * 5)
+//     .translate([width / 2, height / 2]);
+
+// var path = d3.geo.path()
+//     .projection(projection)
+//     .pointRadius(2);
+
+
+var projection = d3.geo.kavrayskiy7()
+    .scale(170)
+    .translate([width / 2, height / 2])
+    .precision(.1);
+
+
+var path = d3.geo.path()
+    .projection(projection);
+
+var graticule = d3.geo.graticule();
+
+var svg = d3.select("body").append("svg")
+    .attr("width", width)
+    .attr("height", height);
+
+svg.append("path")
+  .datum(graticule)
+  .attr("class", "graticule")
+  .attr("d", path);
+
+queue()
+  .defer( d3.json, "world-50m.json")
+  .defer( d3.tsv, "world-country-names.tsv")
+  .defer( d3.csv, "country_pax_percentage.csv")
+  .await(ready);
+
+function ready(error, world, names, country_pax_percentages) {
+
+  svg.append("g")
+    .attr("class", "countries")
+    .selectAll("path")
+      .data(topojson.feature(world, world.objects.countries).features)
+    .enter().append("path")
+    .attr("d", path)
+      .style("fill", function(d) { return color_scale(Math.random()*100); });
+
+  svg.insert("path", ".graticule")
+    .datum(topojson.mesh(world, world.objects.countries, function(a, b) { return a !== b; }))
+    .attr("class", "boundary")
+    .attr("d", path);  
+  }
+
+function ready_uk(error, uk) {
+
+  var subunits = topojson.feature(uk, uk.objects.subunits),
+      places = topojson.feature(uk, uk.objects.places);
+
+  svg.selectAll(".subunit")
+      .data(subunits.features)
+    .enter().append("path")
+//      .attr("class", function(d) { return "subunit " + d.id; })
+      .attr("fill", function(d) { return get_color_country(d.id);
+                         })
+      .attr("d", path);
+
+  svg.append("path")
+      .datum(topojson.mesh(uk, uk.objects.subunits, function(a, b) { return a !== b && a.id !== "IRL"; }))
+      .attr("d", path)
+      .attr("class", "subunit-boundary");
+
+  svg.append("path")
+      .datum(topojson.mesh(uk, uk.objects.subunits, function(a, b) { return a === b && a.id === "IRL"; }))
+      .attr("d", path)
+      .attr("class", "subunit-boundary IRL");
+
+  svg.selectAll(".subunit-label")
+      .data(subunits.features)
+    .enter().append("text")
+      .attr("class", function(d) { return "subunit-label " + d.id; })
+      .attr("transform", function(d) { return "translate(" + path.centroid(d) + ")"; })
+      .attr("dy", ".35em")
+      .text(function(d) { return d.properties.name; });
+
+  svg.append("path")
+      .datum(places)
+      .attr("d", path)
+      .attr("class", "place");
+
+  svg.selectAll(".place-label")
+      .data(places.features)
+    .enter().append("text")
+      .attr("class", "place-label")
+      .attr("transform", function(d) { return "translate(" + projection(d.geometry.coordinates) + ")"; })
+      .attr("x", function(d) { return d.geometry.coordinates[0] > -1 ? 6 : -6; })
+      .attr("dy", ".35em")
+      .style("text-anchor", function(d) { return d.geometry.coordinates[0] > -1 ? "start" : "end"; })
+      .text(function(d) { return d.properties.name; });
+};
+
+</script>
